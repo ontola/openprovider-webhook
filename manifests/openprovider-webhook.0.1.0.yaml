@@ -1,0 +1,270 @@
+---
+# Source: openprovider-webhook/templates/rbac.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openprovider-webhook
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+---
+# Source: openprovider-webhook/templates/rbac.yaml
+# Grant cert-manager permission to validate using our apiserver
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: openprovider-webhook:domain-solver
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+rules:
+  - apiGroups:
+      - io.ontola
+    resources:
+      - '*'
+    verbs:
+      - 'create'
+---
+# Source: openprovider-webhook/templates/rbac.yaml
+# apiserver gets the auth-delegator role to delegate auth decisions to
+# the core apiserver
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openprovider-webhook:auth-delegator
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: openprovider-webhook
+    namespace: default
+---
+# Source: openprovider-webhook/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openprovider-webhook:domain-solver
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: openprovider-webhook:domain-solver
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: cert-manager
+    namespace: cert-manager
+---
+# Source: openprovider-webhook/templates/rbac.yaml
+# Grant the webhook permission to read the ConfigMap containing the Kubernetes
+# apiserver's requestheader-ca-certificate.
+# This ConfigMap is automatically created by the Kubernetes apiserver.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openprovider-webhook:webhook-authentication-reader
+  namespace: kube-system
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: openprovider-webhook
+    namespace: default
+---
+# Source: openprovider-webhook/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: openprovider-webhook
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 443
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    app: openprovider-webhook
+    release: openprovider-webhook
+---
+# Source: openprovider-webhook/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openprovider-webhook
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+spec:
+  replicas: 
+  selector:
+    matchLabels:
+      app: openprovider-webhook
+      release: openprovider-webhook
+  template:
+    metadata:
+      labels:
+        app: openprovider-webhook
+        release: openprovider-webhook
+    spec:
+      serviceAccountName: openprovider-webhook
+      containers:
+        - name: openprovider-webhook
+          image: "ontola/openprovider-webhook:0.1.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - --tls-cert-file=/tls/tls.crt
+            - --tls-private-key-file=/tls/tls.key
+          env:
+            - name: GROUP_NAME
+              value: "io.ontola"
+          ports:
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          volumeMounts:
+            - name: certs
+              mountPath: /tls
+              readOnly: true
+          resources:
+            {}
+      volumes:
+        - name: certs
+          secret:
+            secretName: openprovider-webhook-webhook-tls
+---
+# Source: openprovider-webhook/templates/apiservice.yaml
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1alpha1.io.ontola
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+  annotations:
+    cert-manager.io/inject-ca-from: "default/openprovider-webhook-webhook-tls"
+spec:
+  group: io.ontola
+  groupPriorityMinimum: 1000
+  versionPriority: 15
+  service:
+    name: openprovider-webhook
+    namespace: default
+  version: v1alpha1
+---
+# Source: openprovider-webhook/templates/pki.yaml
+# Generate a CA Certificate used to sign certificates for the webhook
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openprovider-webhook-ca
+  namespace: "default"
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+spec:
+  secretName: openprovider-webhook-ca
+  duration: 43800h # 5y
+  issuerRef:
+    name: openprovider-webhook-selfsign
+  commonName: "ca.openprovider-webhook.cert-manager"
+  isCA: true
+---
+# Source: openprovider-webhook/templates/pki.yaml
+# Finally, generate a serving certificate for the webhook to use
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openprovider-webhook-webhook-tls
+  namespace: "default"
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+spec:
+  secretName: openprovider-webhook-webhook-tls
+  duration: 8760h # 1y
+  issuerRef:
+    name: openprovider-webhook-ca
+  dnsNames:
+  - openprovider-webhook
+  - openprovider-webhook.default
+  - openprovider-webhook.default.svc
+---
+# Source: openprovider-webhook/templates/pki.yaml
+# Create a selfsigned Issuer, in order to create a root CA certificate for
+# signing webhook serving certificates
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openprovider-webhook-selfsign
+  namespace: "default"
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+spec:
+  selfSigned: {}
+---
+# Source: openprovider-webhook/templates/pki.yaml
+# Create an Issuer that uses the above generated CA certificate to issue certs
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openprovider-webhook-ca
+  namespace: "default"
+  labels:
+    app: openprovider-webhook
+    chart: openprovider-webhook-0.1.0
+    release: openprovider-webhook
+    heritage: Helm
+spec:
+  ca:
+    secretName: openprovider-webhook-ca

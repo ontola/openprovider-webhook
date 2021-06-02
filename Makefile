@@ -1,10 +1,10 @@
 OS ?= $(shell go env GOOS)
 ARCH ?= $(shell go env GOARCH)
 
-IMAGE_NAME := "webhook"
-IMAGE_TAG := "latest"
+IMAGE_NAME := "ontola/openprovider-webhook"
+IMAGE_TAG := "0.1.0"
 
-OUT := $(shell pwd)/_out
+OUT := $(shell pwd)/manifests
 
 KUBEBUILDER_VERSION=2.3.2
 
@@ -29,10 +29,9 @@ clean-kubebuilder:
 build:
 	docker build -t "$(IMAGE_NAME):$(IMAGE_TAG)" .
 
-.PHONY: rendered-manifest.yaml
-rendered-manifest.yaml:
+render:
 	helm template \
-	    --name example-webhook \
+	    --name-template openprovider-webhook \
         --set image.repository=$(IMAGE_NAME) \
         --set image.tag=$(IMAGE_TAG) \
-        deploy/example-webhook > "$(OUT)/rendered-manifest.yaml"
+        deploy/openprovider-webhook > "$(OUT)/openprovider-webhook.$(IMAGE_TAG).yaml"
