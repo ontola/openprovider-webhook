@@ -35,3 +35,13 @@ render:
         --set image.repository=$(IMAGE_NAME) \
         --set image.tag=$(IMAGE_TAG) \
         deploy/openprovider-webhook > "$(OUT)/openprovider-webhook.$(IMAGE_TAG).yaml"
+
+chart-make:
+	cr package --config config.yaml deploy/openprovider-webhook
+
+chart-publish:
+	cr upload --config config.yaml --token $(CR_TOKEN)
+
+chart-repo:
+	cr index --config config.yaml
+

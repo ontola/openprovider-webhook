@@ -1,0 +1,7 @@
+owner: ontola
+git-repo: openprovider-webhook
+package-path: charts
+git-base-url: https://api.github.com/
+git-upload-url: https://uploads.github.com/
+index-path: deploy/index.yaml
+charts-repo: https://ontola.github.io/openprovider-webhook
